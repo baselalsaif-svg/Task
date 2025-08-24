@@ -4,34 +4,49 @@ pipeline {
     stage('Checkout') {
       steps { checkout scm }
     }
-    stage('Build image (no tag)') {
+    stage('Verify Docker') {
       steps {
         sh '''
           set -e
-          # Build without specifying an image name/tag; capture the resulting image ID
-          IMAGE_ID=$(docker build -q .)
+          if command -v docker >/dev/null 2>&1; then
+            docker version
+          elif [ -x /usr/local/bin/docker ]; then
+            /usr/local/bin/docker version
+          elif [ -x /opt/homebrew/bin/docker ]; then
+            /opt/homebrew/bin/docker version
+          else
+            echo "ERROR: Docker CLI not found."
+            exit 127
+          fi
+        '''
+      }
+    }
+    stage('Build image') {
+      steps {
+        sh '''
+          set -e
+          if command -v docker >/dev/null 2>&1; then D=docker;
+          elif [ -x /usr/local/bin/docker ]; then D=/usr/local/bin/docker;
+          else D=/opt/homebrew/bin/docker; fi
+          IMAGE_ID=$($D build -q .)
           echo "$IMAGE_ID" | tee image_id.txt
           echo "Built image ID: $IMAGE_ID"
         '''
       }
     }
-    stage('Show result') {
+    stage('Inspect image') {
       steps {
         sh '''
-          echo "Saved image ID:"
-          cat image_id.txt
-          echo
-          echo "Inspecting image:"
-          docker image inspect "$(cat image_id.txt)" \
-            --format 'ID={{.Id}}  SIZE={{.Size}}  TAGS={{join .RepoTags ","}}' || true
+          if command -v docker >/dev/null 2>&1; then D=docker;
+          elif [ -x /usr/local/bin/docker ]; then D=/usr/local/bin/docker;
+          else D=/opt/homebrew/bin/docker; fi
+          $D image inspect "$(cat image_id.txt)" --format 'ID={{.Id}}  SIZE={{.Size}}  TAGS={{join .RepoTags ","}}' || true
         '''
         archiveArtifacts artifacts: 'image_id.txt', fingerprint: true
       }
     }
-    // Optional: quick peek at your Dockerfile for sanity
-    stage('Show Dockerfile (optional)') {
+    stage('Show Dockerfile') {
       steps { sh 'sed -n "1,60p" Dockerfile || true' }
     }
   }
 }
-
