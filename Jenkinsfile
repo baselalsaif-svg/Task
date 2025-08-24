@@ -21,32 +21,22 @@ pipeline {
         '''
       }
     }
-    stage('Build image') {
+    stage('Build & Push') {
       steps {
-        sh '''
-          set -e
-          if command -v docker >/dev/null 2>&1; then D=docker;
-          elif [ -x /usr/local/bin/docker ]; then D=/usr/local/bin/docker;
-          else D=/opt/homebrew/bin/docker; fi
-          IMAGE_ID=$($D build -q .)
-          echo "$IMAGE_ID" | tee image_id.txt
-          echo "Built image ID: $IMAGE_ID"
-        '''
+        withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', usernameVariable: 'U', passwordVariable: 'P')]) {
+          sh '''
+            set -e
+            if command -v docker >/dev/null 2>&1; then D=docker;
+            elif [ -x /usr/local/bin/docker ]; then D=/usr/local/bin/docker;
+            else D=/opt/homebrew/bin/docker; fi
+            IMAGE=baselalsaif/task
+            echo "$P" | $D login -u "$U" --password-stdin
+            $D build -t "$IMAGE:latest" .
+            $D push "$IMAGE:latest"
+            $D logout || true
+          '''
+        }
       }
-    }
-    stage('Inspect image') {
-      steps {
-        sh '''
-          if command -v docker >/dev/null 2>&1; then D=docker;
-          elif [ -x /usr/local/bin/docker ]; then D=/usr/local/bin/docker;
-          else D=/opt/homebrew/bin/docker; fi
-          $D image inspect "$(cat image_id.txt)" --format 'ID={{.Id}}  SIZE={{.Size}}  TAGS={{join .RepoTags ","}}' || true
-        '''
-        archiveArtifacts artifacts: 'image_id.txt', fingerprint: true
-      }
-    }
-    stage('Show Dockerfile') {
-      steps { sh 'sed -n "1,60p" Dockerfile || true' }
     }
   }
 }
